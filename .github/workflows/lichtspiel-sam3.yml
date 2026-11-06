@@ -1,0 +1,61 @@
+# Builds what Lichtspiel's cluster needs from this fork until storytold/lightcraft ships it:
+# lightcraft-cli with AI masks for both Linux arches, and lightcraft-sam3-worker with CUDA for
+# arm64 (GB10, sm_121). Lives on this fork's integration branch only, never in an upstream PR.
+name: lichtspiel-sam3
+on:
+  push:
+    branches: [lichtspiel-sam3]
+    tags: ['v*-sam3.*']
+permissions:
+  contents: write
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
+          - { arch: x86_64, runner: ubuntu-24.04 }
+    runs-on: ${{ matrix.runner }}
+    container: nvidia/cuda:13.2.0-devel-ubuntu24.04
+    env:
+      CUDA_COMPUTE_CAP: "121"
+      CARGO_TERM_COLOR: never
+    steps:
+      - run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git build-essential pkg-config cmake nasm
+          curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - uses: actions/checkout@v4
+      - name: worker (CUDA)
+        if: matrix.arch == 'aarch64'
+        run: cargo build --release --locked -p lightcraft-segment --features cuda --bin lightcraft-sam3-worker
+      - name: cli (AI masks)
+        run: cargo build --release --locked -p lightcraft-cli --features lightcraft-engine/sam
+      - name: package
+        run: |
+          ver=${GITHUB_REF_NAME#v}
+          case "$GITHUB_REF" in refs/tags/*) ;; *) ver=dev ;; esac
+          dir=lightcraft-$ver-linux-${{ matrix.arch }}
+          mkdir -p "$dir/bin"
+          cp target/release/lightcraft-cli "$dir/bin/"
+          [ ! -f target/release/lightcraft-sam3-worker ] || cp target/release/lightcraft-sam3-worker "$dir/bin/"
+          for b in "$dir"/bin/*; do echo "$b:"; ldd "$b" || true; done
+          tar -czf "$dir.tar.gz" "$dir"
+          echo "TARBALL=$dir.tar.gz" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.arch }}
+          path: ${{ env.TARBALL }}
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --prerelease --title "$GITHUB_REF_NAME" --notes "Lichtspiel build of LightCraft, see the branch lichtspiel-sam3." ./*.tar.gz
