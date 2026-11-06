@@ -44,8 +44,8 @@ jobs:
       - name: worker (CUDA)
         if: matrix.arch == 'aarch64'
         run: cargo build --release --locked -p lightcraft-segment --features cuda --bin lightcraft-sam3-worker
-      - name: cli (AI masks, HEIC)
-        run: cargo build --release --locked -p lightcraft-cli --features lightcraft-engine/sam,heif
+      - name: cli (AI masks)
+        run: cargo build --release --locked -p lightcraft-cli --features lightcraft-engine/sam
       - name: package
         run: |
           ver=${GITHUB_REF_NAME#v}
