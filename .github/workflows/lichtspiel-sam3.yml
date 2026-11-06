@@ -9,6 +9,19 @@ on:
 permissions:
   contents: write
 jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends nasm
+          rustup toolchain install stable --profile minimal -c rustfmt -c clippy
+          rustup default stable
+      - run: cargo fmt --all --check
+      - run: cargo test --locked -p lightcraft-segment
+      - run: cargo clippy --locked -p lightcraft-segment --all-targets -- -D warnings
+      - run: cargo test --locked -p lightcraft-engine --lib mask_export
   build:
     strategy:
       fail-fast: false
